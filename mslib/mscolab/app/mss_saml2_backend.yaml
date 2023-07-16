@@ -54,8 +54,8 @@ config:
         allow_unsolicited: true
         endpoints:
           assertion_consumer_service:
-            - [http://localhost:8083/acs/post, 'urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST']
-            - [http://localhost:8083/acs/redirect, 'urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect']
+            - [<base_url>/acs/post, 'urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST']
+            - [<base_url>/acs/redirect, 'urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect']
           discovery_response:
           - [<base_url>/<name>/disco, 'urn:oasis:names:tc:SAML:profiles:SSO:idp-discovery-protocol']
         name_id_format: 'urn:oasis:names:tc:SAML:2.0:nameid-format:transient'
