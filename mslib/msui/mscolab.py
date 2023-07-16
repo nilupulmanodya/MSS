@@ -363,7 +363,7 @@ class MSColab_ConnectDialog(QtWidgets.QDialog, ui_conn.Ui_MSColabConnectDialog):
             data = {'token':user_token}
             response = requests.post(url_idp_login_auth, json=data, timeout=(2, 10))
             if response.status_code == 401:
-                self.set_status("Error", 'Invalid token. Please enter correct token')
+                self.set_status("Error", 'Invalid token or token expired. Please try again')
                 self.stackedWidget.setCurrentWidget(self.loginPage)
 
             elif response.status_code == 200:
