@@ -83,8 +83,6 @@ except ImportError as ex:
 
 #setup idp login config
 if mscolab_settings.IDP_ENABLED :
-    print('is IDP_ENABLED :', mscolab_settings.IDP_ENABLED)
-
     with open("mslib/mscolab/app/mss_saml2_backend.yaml", encoding="utf-8") as fobj:
         yaml_data = yaml.safe_load(fobj)
     if os.path.exists("mslib/mscolab/app/idp.xml"):
@@ -759,7 +757,7 @@ def reset_request():
         return render_template('errors/403.html'), 403
 
 
-@APP.route("/metadata/")
+@APP.route("/metadata/", methods=['GET'])
 def metadata():
     """Return the SAML metadata XML."""
     metadata_string = create_metadata_string(
@@ -768,8 +766,8 @@ def metadata():
     return Response(metadata_string, mimetype="text/xml")
 
 
-@APP.route("/idp_login/")
-def login():
+@APP.route("/idp_login/", methods=['GET'])
+def idp_login():
     """Handle the login process for the user by IDP"""
     try:
         # pylint: disable=unused-variable
@@ -787,38 +785,68 @@ def login():
         if binding == BINDING_HTTP_REDIRECT:
             headers = dict(http_args["headers"])
             return redirect(str(headers["Location"]), code=303)
-        
-        print('>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>')
-
         return Response(http_args["data"], headers=http_args["headers"])
-    except AttributeError as error:
-        print(error)
-        return Response("An error occurred", status=500)
+    except (NameError, AttributeError) as error:
+        return render_template('errors/403.html'), 403
 
-
-@APP.route("/acs/post", methods=["POST"])
+@APP.route("/acs/post", methods=['POST'])
 def acs_post():
     """Handle the SAML authentication response received via POST request."""
-    outstanding_queries = {}
-    binding = BINDING_HTTP_POST
-    authn_response = sp.parse_authn_request_response(
-        request.form["SAMLResponse"], binding, outstanding=outstanding_queries
-    )
-    email = authn_response.ava["email"][0]
+    try:
+        outstanding_queries = {}
+        binding = BINDING_HTTP_POST
+        authn_response = sp.parse_authn_request_response(
+            request.form["SAMLResponse"], binding, outstanding=outstanding_queries
+        )
+        email = authn_response.ava["email"][0]
+        username = authn_response.ava["givenName"][0]
 
-    # Check if an user exists, or add one
-    user = User.query.filter_by(emailid=email).first()
+        user = User.query.filter_by(emailid=email).first()
+        token = generate_confirmation_token(email)
 
-    print('user>>>>>>>>>>>>>>>>>>>>',user)
-    print('email>>>>>>>>>>>>>>>>>>>>>', email)
+        if not user:
+            user = User(email, username, password=token, confirmed=False, confirmed_on=None, logged_by_idp=True)
+            db.session.add(user)
+            db.session.commit()
+            
+        elif user.logged_by_idp is False:
+            user.logged_by_idp = True
+            user.hash_password(token)
+            db.session.add(user)
+            db.session.commit()
+        else:
+            user.hash_password(token)
+            db.session.commit()
 
-    # if not user:
-    #     user = User(email=email)
-    #     db.session.add(user)
-    #     db.session.commit()
-    # login_user(user, remember=True)
-    # return redirect(url_for("profile", data={"email":email}))
-    return 'logged in success'
+        return render_template('user/idp_login_success.html', token=token), 200
+
+    except (NameError, AttributeError, KeyError) :
+        return render_template('errors/500.html'), 500
+
+
+@APP.route('/idp_login_auth/', methods=['POST'])
+def idp_login_auth():
+    """Handle the SAML authentication validation of client application."""
+    try:
+        data = request.get_json()
+        token = data.get('token')
+        email = confirm_token(token, expiration=1200)
+
+        if email:
+            user = User.query.filter_by(emailid=email).first()
+
+            if user is not None:
+                return json.dumps({
+                "success": True,
+                'token': token,
+                'user': {'username': user.username, 'id': user.id, 'emailid': user.emailid}})
+            else:
+                return jsonify({"success": False}), 401
+        else:
+            return jsonify({"success": False}), 401
+    except TypeError:
+        return jsonify({"success": False}), 401
+
 
 @APP.route("/acs/redirect", methods=["GET"])
 def acs_redirect():
