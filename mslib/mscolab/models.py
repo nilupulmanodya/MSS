@@ -53,11 +53,13 @@ class User(db.Model):
     def __init__(self, emailid, username, password=None, confirmed=False, confirmed_on=None, logged_by_idp=False):
         self.username = username
         self.emailid = emailid
-        self.hash_password(password)
         self.registered_on = datetime.datetime.now()
         self.confirmed = confirmed
         self.confirmed_on = confirmed_on
         self.logged_by_idp = logged_by_idp
+
+        if password:
+            self.hash_password(password)
 
     def __repr__(self):
         return f'<User {self.username}>'
