@@ -109,13 +109,36 @@ if mscolab_settings.USE_SAML2:
                               /metadata and try again.")
                 sys.exit()
 
-        # if multiple IdPs exists, development should need to implement accordingly below
+        # if 3rd party IdPs exists, development should need to implement accordingly below
             """
                 if 'idp_2'== configured_idp['idp_identity_name']:
                     # rest of code
                     # set CRTs and metadata paths for the idp_2
                     # configuration idp_2 Saml2Client
+                    # error handling
             """
+        if 'key_cloak_v_13' == configured_idp['idp_identity_name']:
+            yaml_data["config"]["key_cloak_v_13"]["key_file"] = \
+                f'{mscolab_settings.MSCOLAB_SSO_DIR}/key_mscolab.key'
+            yaml_data["config"]["key_cloak_v_13"]["cert_file"] = \
+                f'{mscolab_settings.MSCOLAB_SSO_DIR}/crt_mscolab.crt'
+            yaml_data["config"]["key_cloak_v_13"]["metadata"]["local"][0] = \
+                f'{mscolab_settings.MSCOLAB_SSO_DIR}/keycloak_v_13_idp.xml'
+
+            # configuration localhost_test_idp Saml2Client
+            try:
+                if not os.path.exists(yaml_data["config"]["key_cloak_v_13"]["metadata"]["local"][0]):
+                    yaml_data["config"]["key_cloak_v_13"]["metadata"]["local"] = []
+                    warnings.warn("key_cloak_v_13_idp.xml file does not exists ! Ignore this warning when you \
+                                  initializeing metadata.")
+
+                key_cloak_v_13_idp = SPConfig().load(yaml_data["config"]["key_cloak_v_13"])
+                sp_key_cloak_v_13_idp = Saml2Client(key_cloak_v_13_idp)
+
+            except SAMLError:
+                warnings.warn("Invalid Saml2Client Config with localhost_test_idp ! Please configure with valid CRTs\
+                              /metadata and try again.")
+                sys.exit()
 
 
 # setup http auth
@@ -259,6 +282,9 @@ def get_idp_entity_id(selected_idp):
 
     # elif selected_idp == 'idp2':
     #     idps = sp_idp2.metadata.identity_providers()
+
+    elif selected_idp == 'key_cloak_v_13':
+        idps = sp_key_cloak_v_13_idp.metadata.identity_providers()
 
     only_idp = idps[0]
     entity_id = only_idp
@@ -797,9 +823,18 @@ def reset_request():
 
 @APP.route("/metadata/", methods=['GET'])
 def metadata():
-    """Return the SAML metadata XML for congiguring local host testing IDP"""
+    """Return the SAML metadata XML for configuring local host testing IDP"""
     metadata_string = create_metadata_string(
         None, sp_localhost_test_idp.config, 4, None, None, None, None, None
+    ).decode("utf-8")
+    return Response(metadata_string, mimetype="text/xml")
+
+
+@APP.route("/keycloak_metadata/", methods=['GET'])
+def keycloak_metadata():
+    """Return the SAML metadata XML for configuring keycloak testing IDP"""
+    metadata_string = create_metadata_string(
+        None, sp_key_cloak_v_13_idp.config, 4, None, None, None, None, None
     ).decode("utf-8")
     return Response(metadata_string, mimetype="text/xml")
 
@@ -829,6 +864,8 @@ def idp_login():
 
     # elif selected_idp == 'idp2':
     #     sp_config = SAMLCLiENT for idp2
+    if selected_idp == 'key_cloak_v_13':
+        sp_config = sp_key_cloak_v_13_idp
 
     try:
         _, response_binding = sp_config.config.getattr("endpoints", "sp")[
@@ -869,6 +906,55 @@ def localhost_test_idp_acs_post():
 
     except (NameError, AttributeError, KeyError):
         return render_template('errors/500.html'), 500
+
+
+@APP.route("keycloak_idp/acs/post/", methods=['POST'])
+def keycloak_idp_acs_post():
+    """Handle the SAML authentication response received via POST request from sp_key_cloak_v_13."""
+    try:
+        outstanding_queries = {}
+        binding = BINDING_HTTP_POST
+        authn_response = sp_key_cloak_v_13_idp.parse_authn_request_response(
+            request.form["SAMLResponse"], binding, outstanding=outstanding_queries
+        )
+
+        email = None
+
+        # Initialize an empty dictionary to store attribute values
+        attributes = {}
+
+        # Loop through attribute statements
+        for attribute_statement in authn_response.assertion.attribute_statement:
+            for attribute in attribute_statement.attribute:
+                attribute_name = attribute.name
+                attribute_value = attribute.attribute_value[0].text if attribute.attribute_value else None
+                attributes[attribute_name] = attribute_value
+
+        # Extract the email and givenname attributes
+        email = attributes.get("email")
+        username = attributes.get("givenName")
+
+        if email is not None and username is not None:
+            user = User.query.filter_by(emailid=email).first()
+            token = generate_confirmation_token(email)
+
+            if not user:
+                user = User(email, username, password=token, confirmed=False, confirmed_on=None,
+                            authentication_backend='sp_key_cloak_v_13')
+                db.session.add(user)
+                db.session.commit()
+
+            else:
+                user.authentication_backend = 'sp_key_cloak_v_13'
+                user.hash_password(token)
+                db.session.add(user)
+                db.session.commit()
+
+            return render_template('idp/idp_login_success.html', token=token), 200
+
+    except (NameError, AttributeError, KeyError):
+        return render_template('errors/500.html'), 500
+
 
 
 @APP.route('/idp_login_auth/', methods=['POST'])

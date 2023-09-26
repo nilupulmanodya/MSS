@@ -88,16 +88,22 @@ class default_mscolab_settings:
     # MAIL_DEFAULT_SENDER = 'MSS@localhost'
 
     # enable login by identity provider
-    USE_SAML2 = False
+    USE_SAML2 = True
 
     # dir where mscolab single sign process files are stored
     MSCOLAB_SSO_DIR = os.path.join(DATA_DIR, 'datasso')
 
     # idp settings
     CONFIGURED_IDPS = [
+        
         {
             'idp_identity_name': 'localhost_test_idp',
             'idp_name': 'Testing Identity Provider'
+        },
+
+        {
+            'idp_identity_name': 'key_cloak_v_13',
+            'idp_name': 'Keycloak V 13'
         },
         # {'idp_identity_name': 'idp_2','idp_name':'idp 2'},
         # {'idp_identity_name': 'idp_3','idp_name':'idp 3'},
